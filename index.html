@@ -1342,7 +1342,8 @@
             showProgress(90);
 
             if (data.success) {
-                allVideos = data.result || [];
+                allVideos = Array.isArray(data.result) ? data.result : [];
+                console.log('Videos loaded:', allVideos.length, 'API total:', data.apiTotalCount);
             } else {
                 throw new Error(data.error || data.errors?.[0]?.message || 'API error');
             }
@@ -1365,6 +1366,7 @@
 
     // ─── STATS ───
     function updateStats() {
+        if (!Array.isArray(allVideos)) allVideos = [];
         document.getElementById('totalVideos').textContent = allVideos.length.toLocaleString('pt-BR');
         document.getElementById('totalDuration').textContent = fmtLong(allVideos.reduce((s,v) => s + (v.duration||0), 0));
         document.getElementById('totalSize').textContent = fmtSize(allVideos.reduce((s,v) => s + (v.size||0), 0));
