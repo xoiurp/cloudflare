@@ -1,0 +1,151 @@
+{
+    "success": true,
+    "result": {
+        "videos": [
+            {
+                "uid": "473ad47153f182621eeeefa0781c3283",
+                "creator": null,
+                "thumbnail": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/473ad47153f182621eeeefa0781c3283/thumbnails/thumbnail.jpg",
+                "thumbnailTimestampPct": 0,
+                "readyToStream": true,
+                "readyToStreamAt": "2025-09-28T03:02:47.194789Z",
+                "status": {
+                    "state": "ready",
+                    "pctComplete": "100.000000",
+                    "errorReasonCode": "",
+                    "errorReasonText": ""
+                },
+                "meta": {
+                    "filename": "Composição-1_1.mp4",
+                    "filetype": "video/mp4",
+                    "name": "Composição-1_1.mp4",
+                    "relativePath": "null",
+                    "type": "video/mp4"
+                },
+                "created": "2025-09-28T03:02:28.317852Z",
+                "modified": "2025-09-28T03:02:48.194986Z",
+                "scheduledDeletion": null,
+                "size": 11984755,
+                "preview": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/473ad47153f182621eeeefa0781c3283/watch",
+                "allowedOrigins": [],
+                "requireSignedURLs": false,
+                "uploaded": "2025-09-28T03:02:28.317849Z",
+                "uploadExpiry": "2025-09-29T03:02:28.317845Z",
+                "maxSizeBytes": null,
+                "maxDurationSeconds": null,
+                "duration": 10,
+                "input": {
+                    "width": 1920,
+                    "height": 576
+                },
+                "playback": {
+                    "hls": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/473ad47153f182621eeeefa0781c3283/manifest/video.m3u8",
+                    "dash": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/473ad47153f182621eeeefa0781c3283/manifest/video.mpd"
+                },
+                "watermark": null,
+                "clippedFrom": null,
+                "publicDetails": {
+                    "title": null,
+                    "share_link": null,
+                    "channel_link": null,
+                    "logo": null
+                }
+            },
+            {
+                "uid": "9d715b06f66e4011ea8e1b3008533bea",
+                "creator": null,
+                "thumbnail": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/9d715b06f66e4011ea8e1b3008533bea/thumbnails/thumbnail.jpg",
+                "thumbnailTimestampPct": 0,
+                "readyToStream": true,
+                "readyToStreamAt": "2025-09-28T03:02:48.191187Z",
+                "status": {
+                    "state": "ready",
+                    "pctComplete": "100.000000",
+                    "errorReasonCode": "",
+                    "errorReasonText": ""
+                },
+                "meta": {
+                    "filename": "home_1.mp4",
+                    "filetype": "video/mp4",
+                    "name": "home_1.mp4",
+                    "relativePath": "null",
+                    "type": "video/mp4"
+                },
+                "created": "2025-09-28T03:02:33.913063Z",
+                "modified": "2025-09-28T03:02:53.343145Z",
+                "scheduledDeletion": null,
+                "size": 22591373,
+                "preview": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/9d715b06f66e4011ea8e1b3008533bea/watch",
+                "allowedOrigins": [],
+                "requireSignedURLs": false,
+                "uploaded": "2025-09-28T03:02:33.913061Z",
+                "uploadExpiry": "2025-09-29T03:02:33.913058Z",
+                "maxSizeBytes": null,
+                "maxDurationSeconds": null,
+                "duration": 13.4,
+                "input": {
+                    "width": 1920,
+                    "height": 1080
+                },
+                "playback": {
+                    "hls": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/9d715b06f66e4011ea8e1b3008533bea/manifest/video.m3u8",
+                    "dash": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/9d715b06f66e4011ea8e1b3008533bea/manifest/video.mpd"
+                },
+                "watermark": null,
+                "clippedFrom": null,
+                "publicDetails": {
+                    "title": null,
+                    "share_link": null,
+                    "channel_link": null,
+                    "logo": null
+                }
+            },
+            {
+                "uid": "72d1e6432d717373125a67462c4e42fd",
+                "creator": null,
+                "thumbnail": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/72d1e6432d717373125a67462c4e42fd/thumbnails/thumbnail.jpg",
+                "thumbnailTimestampPct": 0,
+                "readyToStream": true,
+                "readyToStreamAt": "2025-11-09T05:05:39.032297Z",
+                "status": {
+                    "state": "ready",
+                    "pctComplete": "100.000000",
+                    "errorReasonCode": "",
+                    "errorReasonText": ""
+                },
+                "meta": {
+                    "filename": "Laminectomia L7S1  Distracao vertebral_2160p.mp4",
+                    "filetype": "video/mp4",
+                    "name": "Laminectomia L7S1  Distracao vertebral_2160p.mp4",
+                    "relativePath": "null",
+                    "type": "video/mp4"
+                },
+                "created": "2025-11-09T04:42:43.437228Z",
+                "modified": "2025-11-09T05:07:42.937058Z",
+                "scheduledDeletion": null,
+                "size": 10207327422,
+                "preview": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/72d1e6432d717373125a67462c4e42fd/watch",
+                "allowedOrigins": [],
+                "requireSignedURLs": false,
+                "uploaded": "2025-11-09T04:42:43.43549Z",
+                "uploadExpiry": "2025-11-10T04:42:43.435486Z",
+                "maxSizeBytes": null,
+                "maxDurationSeconds": null,
+                "duration": 1746.8,
+                "input": {
+                    "width": 3852,
+                    "height": 2160
+                },
+                "playback": {
+                    "hls": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/72d1e6432d717373125a67462c4e42fd/manifest/video.m3u8",
+                    "dash": "https://customer-mcykto8a2uaqo5xu.cloudflarestream.com/72d1e6432d717373125a67462c4e42fd/manifest/video.mpd"
+                },
+                "watermark": null,
+                "clippedFrom": null,
+                "publicDetails": {
+                    "title": null,
+                    "share_link": null,
+                    "channel_link": null,
+                    "logo": null
+                }
+            },..... ocultado por conter muitos itens

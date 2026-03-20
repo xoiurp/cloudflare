@@ -31,32 +31,22 @@ exports.handler = async (event) => {
     "Content-Type": "application/json",
   };
 
+  // Extract the videos array from the Cloudflare response
+  // The API returns { result: { videos: [...] } } or { result: [...] }
+  function extractVideos(result) {
+    if (Array.isArray(result)) return result;
+    if (result && Array.isArray(result.videos)) return result.videos;
+    return [];
+  }
+
   try {
-    // First request: get videos + total count
     const firstUrl = `${BASE_URL}?include_counts=true&asc=true`;
     console.log("Fetching first batch...");
 
     const resp = await fetch(firstUrl, { headers: API_HEADERS });
     console.log("CF API status:", resp.status);
 
-    const text = await resp.text();
-    console.log("Response length:", text.length);
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      return {
-        statusCode: 502,
-        headers,
-        body: JSON.stringify({
-          success: false,
-          error: "Invalid JSON from Cloudflare API",
-          status: resp.status,
-          preview: text.substring(0, 500),
-        }),
-      };
-    }
+    const data = await resp.json();
 
     if (!data.success) {
       return {
@@ -71,15 +61,14 @@ exports.handler = async (event) => {
       };
     }
 
-    let allVideos = data.result || [];
-    const totalFromApi = data.total || 0;
-    const remaining = data.range || 0;
+    let allVideos = extractVideos(data.result);
+    const totalFromApi = data.total || data.result?.total || 0;
+    const remaining = data.range || data.result?.range || 0;
     console.log(`First batch: ${allVideos.length} videos, total: ${totalFromApi}, range: ${remaining}`);
 
-    // Paginate using date cursor if there are more videos
-    // Each request returns up to 1000. Use the last video's created date as cursor.
+    // Paginate using date cursor if there are more videos (>1000)
     let safety = 0;
-    while (allVideos.length < totalFromApi && safety < 50) {
+    while (totalFromApi > 0 && allVideos.length < totalFromApi && safety < 50) {
       safety++;
       const lastVideo = allVideos[allVideos.length - 1];
       if (!lastVideo?.created) break;
@@ -90,10 +79,13 @@ exports.handler = async (event) => {
       const nextResp = await fetch(nextUrl, { headers: API_HEADERS });
       const nextData = await nextResp.json();
 
-      if (!nextData.success || !nextData.result?.length) break;
+      if (!nextData.success) break;
 
-      // Filter out duplicates (the last video from previous batch may appear again)
-      const newVideos = nextData.result.filter(
+      const nextVideos = extractVideos(nextData.result);
+      if (nextVideos.length === 0) break;
+
+      // Filter out duplicates
+      const newVideos = nextVideos.filter(
         (v) => !allVideos.some((existing) => existing.uid === v.uid)
       );
 
