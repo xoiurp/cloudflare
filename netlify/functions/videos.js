@@ -20,7 +20,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const PER_PAGE = 1000; // Cloudflare max per request
+  const PER_PAGE = 1000;
 
   try {
     let allVideos = [];
@@ -45,9 +45,17 @@ exports.handler = async (event) => {
       const results = data.result || [];
       allVideos = allVideos.concat(results);
 
-      // Check if there are more pages
-      const totalCount = data.result_info?.total_count || 0;
-      if (allVideos.length >= totalCount || results.length < PER_PAGE) {
+      // Determine actual per_page the API used (may be less than requested)
+      const actualPerPage = data.result_info?.per_page || results.length;
+      const totalCount = data.result_info?.total_count;
+
+      // Stop if: no results returned, or we have all videos based on total_count,
+      // or results returned fewer than the actual per_page (last page)
+      if (results.length === 0) {
+        hasMore = false;
+      } else if (totalCount && totalCount > 0 && allVideos.length >= totalCount) {
+        hasMore = false;
+      } else if (results.length < actualPerPage) {
         hasMore = false;
       } else {
         page++;
