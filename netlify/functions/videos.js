@@ -20,23 +20,48 @@ exports.handler = async (event) => {
     };
   }
 
+  const PER_PAGE = 1000; // Cloudflare max per request
+
   try {
-    const resp = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream?per_page=100`,
-      {
+    let allVideos = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const url = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream?per_page=${PER_PAGE}&page=${page}`;
+      const resp = await fetch(url, {
         headers: {
           Authorization: `Bearer ${API_TOKEN}`,
           "Content-Type": "application/json",
         },
-      }
-    );
+      });
 
-    const data = await resp.json();
+      const data = await resp.json();
+
+      if (!data.success) {
+        throw new Error(data.errors?.[0]?.message || "Cloudflare API error");
+      }
+
+      const results = data.result || [];
+      allVideos = allVideos.concat(results);
+
+      // Check if there are more pages
+      const totalCount = data.result_info?.total_count || 0;
+      if (allVideos.length >= totalCount || results.length < PER_PAGE) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        success: true,
+        result: allVideos,
+        total: allVideos.length,
+      }),
     };
   } catch (err) {
     return {
