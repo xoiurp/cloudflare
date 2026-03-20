@@ -735,8 +735,12 @@
                 <td>${getStatusBadge(v)}</td>
                 <td style="font-size:12px;color:var(--text-dim)">${formatDate(v.created)}</td>
                 <td>
-                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();copyText('${v.uid}','UID')">UID</button>
-                    <button class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="event.stopPropagation();copyText('${v.playback?.hls||''}','HLS')">HLS</button>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px">
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();copyText('${getVideoName(v)}','Titulo')">Titulo</button>
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();copyText('${v.thumbnail}','Thumbnail')">Thumb</button>
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();copyText('${v.uid}','UID')">UID</button>
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();copyText('${v.playback?.hls||''}','HLS')">HLS</button>
+                    </div>
                 </td>
             </tr>
         `).join('');
@@ -770,6 +774,8 @@
         const embedCode = `<iframe src="https://customer-${CUSTOMER_CODE}.cloudflarestream.com/${v.uid}/iframe" style="border:none;width:100%;aspect-ratio:16/9" allow="accelerometer;gyroscope;autoplay;encrypted-media;picture-in-picture" allowfullscreen></iframe>`;
 
         document.getElementById('modalActions').innerHTML = `
+            <button class="btn btn-secondary btn-sm" onclick="copyText('${getVideoName(v).replace(/'/g,"\\'")}','Titulo')">Copiar Titulo</button>
+            <button class="btn btn-secondary btn-sm" onclick="copyText('${v.thumbnail}','Thumbnail URL')">Copiar Thumbnail</button>
             <button class="btn btn-secondary btn-sm" onclick="copyText('${v.uid}','UID')">Copiar UID</button>
             <button class="btn btn-secondary btn-sm" onclick="copyText('${v.playback?.hls||''}','HLS')">Copiar HLS</button>
             <button class="btn btn-secondary btn-sm" onclick="copyText('${v.playback?.dash||''}','DASH')">Copiar DASH</button>
