@@ -1,3 +1,35 @@
+const https = require("https");
+
+function cfRequest(url, token) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(new Error("Invalid JSON from Cloudflare API"));
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.setTimeout(8000, () => {
+      req.destroy();
+      reject(new Error("Cloudflare API timeout"));
+    });
+  });
+}
+
 exports.handler = async (event) => {
   const headers = {
     "Access-Control-Allow-Origin": "*",
@@ -29,14 +61,7 @@ exports.handler = async (event) => {
 
     while (hasMore) {
       const url = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream?per_page=${PER_PAGE}&page=${page}`;
-      const resp = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      const data = await resp.json();
+      const data = await cfRequest(url, API_TOKEN);
 
       if (!data.success) {
         throw new Error(data.errors?.[0]?.message || "Cloudflare API error");
