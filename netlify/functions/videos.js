@@ -1,35 +1,3 @@
-const https = require("https");
-
-function cfRequest(url, token) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(
-      url,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      },
-      (res) => {
-        let body = "";
-        res.on("data", (chunk) => (body += chunk));
-        res.on("end", () => {
-          try {
-            resolve(JSON.parse(body));
-          } catch (e) {
-            reject(new Error("Invalid JSON from Cloudflare API"));
-          }
-        });
-      }
-    );
-    req.on("error", reject);
-    req.setTimeout(8000, () => {
-      req.destroy();
-      reject(new Error("Cloudflare API timeout"));
-    });
-  });
-}
-
 exports.handler = async (event) => {
   const headers = {
     "Access-Control-Allow-Origin": "*",
@@ -48,44 +16,94 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ success: false, error: "Missing Cloudflare credentials in environment variables" }),
+      body: JSON.stringify({
+        success: false,
+        error: "Missing credentials",
+        hasAccountId: !!ACCOUNT_ID,
+        hasToken: !!API_TOKEN,
+      }),
     };
   }
 
-  const PER_PAGE = 1000;
+  const BASE_URL = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream`;
+  const API_HEADERS = {
+    "Authorization": `Bearer ${API_TOKEN}`,
+    "Content-Type": "application/json",
+  };
 
   try {
-    let allVideos = [];
-    let page = 1;
-    let hasMore = true;
+    // First request: get videos + total count
+    const firstUrl = `${BASE_URL}?include_counts=true&asc=true`;
+    console.log("Fetching first batch...");
 
-    while (hasMore) {
-      const url = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream?per_page=${PER_PAGE}&page=${page}`;
-      const data = await cfRequest(url, API_TOKEN);
+    const resp = await fetch(firstUrl, { headers: API_HEADERS });
+    console.log("CF API status:", resp.status);
 
-      if (!data.success) {
-        throw new Error(data.errors?.[0]?.message || "Cloudflare API error");
-      }
+    const text = await resp.text();
+    console.log("Response length:", text.length);
 
-      const results = data.result || [];
-      allVideos = allVideos.concat(results);
-
-      // Determine actual per_page the API used (may be less than requested)
-      const actualPerPage = data.result_info?.per_page || results.length;
-      const totalCount = data.result_info?.total_count;
-
-      // Stop if: no results returned, or we have all videos based on total_count,
-      // or results returned fewer than the actual per_page (last page)
-      if (results.length === 0) {
-        hasMore = false;
-      } else if (totalCount && totalCount > 0 && allVideos.length >= totalCount) {
-        hasMore = false;
-      } else if (results.length < actualPerPage) {
-        hasMore = false;
-      } else {
-        page++;
-      }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({
+          success: false,
+          error: "Invalid JSON from Cloudflare API",
+          status: resp.status,
+          preview: text.substring(0, 500),
+        }),
+      };
     }
+
+    if (!data.success) {
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({
+          success: false,
+          error: "Cloudflare API error",
+          errors: data.errors,
+          messages: data.messages,
+        }),
+      };
+    }
+
+    let allVideos = data.result || [];
+    const totalFromApi = data.total || 0;
+    const remaining = data.range || 0;
+    console.log(`First batch: ${allVideos.length} videos, total: ${totalFromApi}, range: ${remaining}`);
+
+    // Paginate using date cursor if there are more videos
+    // Each request returns up to 1000. Use the last video's created date as cursor.
+    let safety = 0;
+    while (allVideos.length < totalFromApi && safety < 50) {
+      safety++;
+      const lastVideo = allVideos[allVideos.length - 1];
+      if (!lastVideo?.created) break;
+
+      const nextUrl = `${BASE_URL}?include_counts=true&asc=true&start=${encodeURIComponent(lastVideo.created)}`;
+      console.log(`Fetching page ${safety + 1}, after: ${lastVideo.created}`);
+
+      const nextResp = await fetch(nextUrl, { headers: API_HEADERS });
+      const nextData = await nextResp.json();
+
+      if (!nextData.success || !nextData.result?.length) break;
+
+      // Filter out duplicates (the last video from previous batch may appear again)
+      const newVideos = nextData.result.filter(
+        (v) => !allVideos.some((existing) => existing.uid === v.uid)
+      );
+
+      if (newVideos.length === 0) break;
+
+      allVideos = allVideos.concat(newVideos);
+      console.log(`+${newVideos.length} new videos (total: ${allVideos.length})`);
+    }
+
+    console.log("Final total:", allVideos.length);
 
     return {
       statusCode: 200,
@@ -94,9 +112,11 @@ exports.handler = async (event) => {
         success: true,
         result: allVideos,
         total: allVideos.length,
+        apiTotalCount: totalFromApi,
       }),
     };
   } catch (err) {
+    console.error("Function error:", err.message, err.stack);
     return {
       statusCode: 500,
       headers,
