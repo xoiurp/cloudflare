@@ -2,6 +2,11 @@ const { S3Client, ListObjectsV2Command } = require("@aws-sdk/client-s3");
 
 const R2_PUBLIC_URL = "https://pub-42ef583694d949bca7c5c104422f55c7.r2.dev";
 
+// ─── IN-MEMORY CACHE (persists across warm invocations) ───
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let cachedResponse = null;
+let cacheTimestamp = 0;
+
 function encodeR2Path(key) {
   return key
     .split("/")
@@ -14,10 +19,18 @@ exports.handler = async (event) => {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
     "Content-Type": "application/json",
+    "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
   };
 
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers };
+  }
+
+  // Return cached response if still fresh
+  const now = Date.now();
+  if (cachedResponse && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    console.log("Returning cached response (age: " + Math.round((now - cacheTimestamp) / 1000) + "s)");
+    return { statusCode: 200, headers, body: cachedResponse };
   }
 
   const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -146,15 +159,17 @@ exports.handler = async (event) => {
 
     console.log(`Found ${videos.length} videos`);
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        success: true,
-        videos,
-        total: videos.length,
-      }),
-    };
+    const body = JSON.stringify({
+      success: true,
+      videos,
+      total: videos.length,
+    });
+
+    // Store in cache for subsequent warm invocations
+    cachedResponse = body;
+    cacheTimestamp = Date.now();
+
+    return { statusCode: 200, headers, body };
   } catch (err) {
     console.error("Function error:", err.message, err.stack);
     return {

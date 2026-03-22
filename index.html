@@ -526,7 +526,47 @@
         setTimeout(function() { bar.style.display = 'none'; bar.style.width = '0'; }, 400);
     }
 
-    // ─── FETCH ───
+    // ─── FETCH WITH RETRY + LOCAL CACHE ───
+    var CACHE_KEY = 'cf_videos_cache';
+    var CACHE_MAX_AGE = 5 * 60 * 1000; // 5 minutes
+
+    function getLocalCache() {
+        try {
+            var raw = localStorage.getItem(CACHE_KEY);
+            if (!raw) return null;
+            var cached = JSON.parse(raw);
+            if (Date.now() - cached.ts < CACHE_MAX_AGE && Array.isArray(cached.videos)) {
+                return cached.videos;
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function setLocalCache(videos) {
+        try {
+            localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), videos: videos }));
+        } catch (e) {}
+    }
+
+    async function fetchWithRetry(url, maxRetries, baseDelay) {
+        var lastError;
+        for (var attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                var resp = await fetch(url);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                return await resp.json();
+            } catch (e) {
+                lastError = e;
+                if (attempt < maxRetries) {
+                    var delay = baseDelay * Math.pow(2, attempt);
+                    console.log('Retry ' + (attempt + 1) + '/' + maxRetries + ' in ' + delay + 'ms...');
+                    await new Promise(function(r) { setTimeout(r, delay); });
+                }
+            }
+        }
+        throw lastError;
+    }
+
     async function fetchVideos() {
         if (isLoading) return;
         isLoading = true;
@@ -540,24 +580,30 @@
 
         try {
             showProgress(40);
-            var resp = await fetch('/api/videos');
-            showProgress(70);
-            var data = await resp.json();
+            var data = await fetchWithRetry('/api/videos', 3, 1000);
             showProgress(90);
 
             if (data.success) {
                 allVideos = Array.isArray(data.videos) ? data.videos : [];
+                setLocalCache(allVideos);
                 console.log('Videos loaded:', allVideos.length);
             } else {
                 throw new Error(data.error || 'API error');
             }
         } catch (e) {
-            hideProgress();
-            document.getElementById('skeletonLoader').style.display = 'none';
-            document.getElementById('errorState').style.display = 'flex';
-            document.getElementById('errorMsg').textContent = 'Erro: ' + e.message;
-            isLoading = false;
-            return;
+            // Fallback: use local cache if available
+            var cached = getLocalCache();
+            if (cached && cached.length > 0) {
+                allVideos = cached;
+                console.log('Using cached videos (' + cached.length + ') after API error:', e.message);
+            } else {
+                hideProgress();
+                document.getElementById('skeletonLoader').style.display = 'none';
+                document.getElementById('errorState').style.display = 'flex';
+                document.getElementById('errorMsg').textContent = 'Erro: ' + e.message;
+                isLoading = false;
+                return;
+            }
         }
 
         hideProgress();
