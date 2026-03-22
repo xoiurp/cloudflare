@@ -414,8 +414,7 @@
             <button id="gridViewBtn" class="active" onclick="setView('grid')" title="Grade">&#8862;</button>
             <button id="listViewBtn" onclick="setView('list')" title="Lista">&#9776;</button>
         </div>
-        <button class="btn btn-primary" onclick="fetchVideos()">&#8635; Atualizar</button>
-        <button class="btn btn-primary" onclick="rebuildIndex()" id="rebuildBtn" title="Reconstruir indice de videos no R2" style="background:#e67e22">&#9881; Rebuild</button>
+        <button class="btn btn-primary" id="refreshBtn" onclick="refreshVideos()">&#8635; Atualizar</button>
     </div>
 </div>
 
@@ -432,7 +431,7 @@
     <div class="error-state" id="errorState" style="display:none">
         <span style="font-size:40px">&#9888;</span>
         <span id="errorMsg">Erro ao carregar videos</span>
-        <button class="btn btn-primary" onclick="fetchVideos()">Tentar novamente</button>
+        <button class="btn btn-primary" onclick="refreshVideos()">Tentar novamente</button>
     </div>
 
     <div class="grid active" id="gridView"></div>
@@ -527,22 +526,9 @@
         setTimeout(function() { bar.style.display = 'none'; bar.style.width = '0'; }, 400);
     }
 
-    // ─── VIDEO INDEX: Worker API + Fallbacks ───
+    // ─── VIDEO INDEX: Worker API ───
     var WORKER_URL = 'https://projeto-cirurgiao-videos.gustavobressanin6.workers.dev';
     var CACHE_KEY = 'cf_videos_cache';
-    var CACHE_MAX_AGE = 30 * 60 * 1000; // 30 minutes
-
-    function getLocalCache() {
-        try {
-            var raw = localStorage.getItem(CACHE_KEY);
-            if (!raw) return null;
-            var cached = JSON.parse(raw);
-            if (Date.now() - cached.ts < CACHE_MAX_AGE && Array.isArray(cached.videos)) {
-                return cached.videos;
-            }
-        } catch (e) {}
-        return null;
-    }
 
     function setLocalCache(videos) {
         try {
@@ -550,61 +536,137 @@
         } catch (e) {}
     }
 
-    async function fetchVideos() {
-        if (isLoading) return;
-        isLoading = true;
-
-        document.getElementById('skeletonLoader').style.display = 'grid';
-        document.getElementById('errorState').style.display = 'none';
-        document.getElementById('gridView').innerHTML = '';
-        document.getElementById('listBody').innerHTML = '';
-        document.getElementById('emptyState').style.display = 'none';
-        showProgress(20);
-
-        var data = null;
-
-        // Source 1: Cloudflare Worker (reads pre-built videos.json from R2)
+    function getLocalCache() {
         try {
-            showProgress(40);
-            var resp = await fetch(WORKER_URL + '/videos');
-            if (resp.ok) {
-                data = await resp.json();
-                console.log('Loaded from Worker API');
-            }
-        } catch (e) {
-            console.warn('Worker fetch failed:', e.message);
-        }
+            var raw = localStorage.getItem(CACHE_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw).videos || null;
+        } catch (e) {}
+        return null;
+    }
 
-        // Source 2: localStorage cache (offline fallback)
-        if (!data || !data.success) {
-            showProgress(70);
-            var cached = getLocalCache();
-            if (cached && cached.length > 0) {
-                data = { success: true, videos: cached };
-                console.log('Loaded from local cache (' + cached.length + ' videos)');
-            }
-        }
-
-        showProgress(90);
-
-        if (data && data.success) {
-            allVideos = Array.isArray(data.videos) ? data.videos : [];
-            setLocalCache(allVideos);
-        } else {
-            hideProgress();
-            document.getElementById('skeletonLoader').style.display = 'none';
-            document.getElementById('errorState').style.display = 'flex';
-            document.getElementById('errorMsg').textContent = 'Erro ao carregar. Clique em Rebuild para construir o indice.';
-            isLoading = false;
-            return;
-        }
-
+    // Show videos on screen (shared by fetchVideos and refreshVideos)
+    function displayVideos(videos) {
+        allVideos = Array.isArray(videos) ? videos : [];
+        setLocalCache(allVideos);
         hideProgress();
         document.getElementById('skeletonLoader').style.display = 'none';
         isLoading = false;
         updateStats();
         updateFilterCounts();
         applyFilters();
+    }
+
+    function showError(msg) {
+        hideProgress();
+        document.getElementById('skeletonLoader').style.display = 'none';
+        document.getElementById('errorState').style.display = 'flex';
+        document.getElementById('errorMsg').textContent = msg;
+        isLoading = false;
+    }
+
+    function startLoading() {
+        document.getElementById('skeletonLoader').style.display = 'grid';
+        document.getElementById('errorState').style.display = 'none';
+        document.getElementById('gridView').innerHTML = '';
+        document.getElementById('listBody').innerHTML = '';
+        document.getElementById('emptyState').style.display = 'none';
+    }
+
+    // ─── FETCH (init — loads cached index, fast) ───
+    async function fetchVideos() {
+        if (isLoading) return;
+        isLoading = true;
+        startLoading();
+        showProgress(20);
+
+        var data = null;
+
+        // Try Worker cached index first
+        try {
+            showProgress(40);
+            var resp = await fetch(WORKER_URL + '/videos');
+            if (resp.ok) data = await resp.json();
+        } catch (e) {}
+
+        // Fallback: localStorage
+        if (!data || !data.success) {
+            var cached = getLocalCache();
+            if (cached && cached.length > 0) {
+                data = { success: true, videos: cached };
+            }
+        }
+
+        showProgress(90);
+
+        if (data && data.success) {
+            displayVideos(data.videos);
+        } else {
+            showError('Nenhum indice encontrado. Clique em Atualizar para escanear os videos.');
+        }
+    }
+
+    // ─── REFRESH (live rebuild — scans R2 bucket fresh) ───
+    async function refreshVideos() {
+        if (isLoading) return;
+        isLoading = true;
+        startLoading();
+        showProgress(5);
+
+        var btn = document.getElementById('refreshBtn');
+        btn.disabled = true;
+
+        try {
+            // Step 1: Reset
+            btn.textContent = 'Resetando...';
+            var resetResp = await fetch(WORKER_URL + '/rebuild-reset', { method: 'POST' });
+            var resetData = await resetResp.json();
+            if (!resetData.success) throw new Error(resetData.error);
+
+            // Step 2: Scan pages until done
+            var done = false;
+            var step = 0;
+            while (!done) {
+                step++;
+                var resp = await fetch(WORKER_URL + '/rebuild-step', { method: 'POST' });
+                var data = await resp.json();
+
+                if (!data.success) throw new Error(data.error);
+
+                // Progress: estimate based on pages (bucket has ~152 pages)
+                var pct = Math.min(85, 5 + (data.pagesDone / 160) * 80);
+                showProgress(pct);
+                btn.textContent = 'Escaneando... p' + data.pagesDone + ' (' + (data.totalKeys || 0) + ' m3u8)';
+
+                if (data.done) {
+                    done = true;
+                    btn.textContent = 'Carregando ' + data.totalVideos + ' videos...';
+                }
+            }
+
+            // Step 3: Load the fresh index
+            showProgress(90);
+            var vidResp = await fetch(WORKER_URL + '/videos');
+            var vidData = await vidResp.json();
+
+            if (vidData && vidData.success) {
+                btn.textContent = '\u21BB Atualizar';
+                btn.disabled = false;
+                displayVideos(vidData.videos);
+            } else {
+                throw new Error('Failed to load rebuilt index');
+            }
+        } catch (e) {
+            btn.textContent = 'Erro! Tente novamente';
+            btn.style.background = '#e74c3c';
+            console.error('Refresh error:', e.message);
+            showError('Erro ao atualizar: ' + e.message);
+            setTimeout(function() {
+                btn.textContent = '\u21BB Atualizar';
+                btn.style.background = '';
+                btn.disabled = false;
+            }, 3000);
+        }
     }
 
     // ─── STATS ───
@@ -883,57 +945,6 @@
             document.getElementById('searchInput').focus();
         }
     });
-
-    // ─── REBUILD INDEX (paginated via Worker) ───
-    async function rebuildIndex() {
-        var btn = document.getElementById('rebuildBtn');
-        btn.disabled = true;
-
-        try {
-            // Step 1: Reset progress
-            btn.textContent = 'Resetando...';
-            var resetResp = await fetch(WORKER_URL + '/rebuild-reset', { method: 'POST' });
-            var resetData = await resetResp.json();
-            if (!resetData.success) throw new Error(resetData.error || 'Reset failed');
-
-            // Step 2: Call rebuild-step in loop until done
-            var done = false;
-            var step = 0;
-            while (!done) {
-                step++;
-                btn.textContent = 'Escaneando... (etapa ' + step + ')';
-                var resp = await fetch(WORKER_URL + '/rebuild-step', { method: 'POST' });
-                var data = await resp.json();
-
-                if (!data.success) throw new Error(data.error || 'Rebuild step failed');
-
-                if (data.done) {
-                    done = true;
-                    btn.textContent = 'OK! ' + (data.totalVideos || 0) + ' videos';
-                    btn.style.background = '#27ae60';
-                } else {
-                    btn.textContent = 'Escaneando... p' + data.pagesDone + ' (' + data.totalKeys + ' playlists)';
-                }
-            }
-
-            // Reload video list
-            setTimeout(function() {
-                btn.textContent = '\u2699 Rebuild';
-                btn.style.background = '#e67e22';
-                btn.disabled = false;
-                fetchVideos();
-            }, 2000);
-        } catch (e) {
-            btn.textContent = 'Erro!';
-            btn.style.background = '#e74c3c';
-            console.error('Rebuild error:', e.message);
-            setTimeout(function() {
-                btn.textContent = '\u2699 Rebuild';
-                btn.style.background = '#e67e22';
-                btn.disabled = false;
-            }, 3000);
-        }
-    }
 
     // ─── INIT ───
     fetchVideos();
