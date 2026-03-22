@@ -55,8 +55,8 @@ exports.handler = async (event) => {
     do {
       const command = new ListObjectsV2Command({
         Bucket: BUCKET_NAME,
-        MaxKeys: 20,
-        Delimiter: "/",
+        Prefix: "videos/",
+        MaxKeys: 1000,
         ContinuationToken: continuationToken,
       });
 
