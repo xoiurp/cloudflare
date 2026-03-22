@@ -1,0 +1,7 @@
+name = "projeto-cirurgiao-videos"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+[[r2_buckets]]
+binding = "VIDEOS_BUCKET"
+bucket_name = "s3-projeto-cirurgiao"

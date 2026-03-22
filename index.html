@@ -527,8 +527,8 @@
         setTimeout(function() { bar.style.display = 'none'; bar.style.width = '0'; }, 400);
     }
 
-    // ─── VIDEO INDEX: R2 STATIC JSON + FALLBACKS ───
-    var R2_INDEX_URL = 'https://pub-42ef583694d949bca7c5c104422f55c7.r2.dev/videos.json';
+    // ─── VIDEO INDEX: Worker API + Fallbacks ───
+    var WORKER_URL = 'https://projeto-cirurgiao-videos.gustavobressanin6.workers.dev';
     var CACHE_KEY = 'cf_videos_cache';
     var CACHE_MAX_AGE = 30 * 60 * 1000; // 30 minutes
 
@@ -563,33 +563,19 @@
 
         var data = null;
 
-        // Source 1: R2 static JSON (fastest — no function call)
+        // Source 1: Cloudflare Worker (reads pre-built videos.json from R2)
         try {
-            showProgress(30);
-            var resp = await fetch(R2_INDEX_URL);
+            showProgress(40);
+            var resp = await fetch(WORKER_URL + '/videos');
             if (resp.ok) {
                 data = await resp.json();
-                console.log('Loaded from R2 static index');
+                console.log('Loaded from Worker API');
             }
         } catch (e) {
-            console.warn('R2 direct fetch failed:', e.message);
+            console.warn('Worker fetch failed:', e.message);
         }
 
-        // Source 2: Netlify function (reads videos.json via S3 API)
-        if (!data || !data.success) {
-            try {
-                showProgress(50);
-                var resp2 = await fetch('/api/videos');
-                if (resp2.ok) {
-                    data = await resp2.json();
-                    console.log('Loaded from API function');
-                }
-            } catch (e) {
-                console.warn('API function failed:', e.message);
-            }
-        }
-
-        // Source 3: localStorage cache (offline fallback)
+        // Source 2: localStorage cache (offline fallback)
         if (!data || !data.success) {
             showProgress(70);
             var cached = getLocalCache();
@@ -608,7 +594,7 @@
             hideProgress();
             document.getElementById('skeletonLoader').style.display = 'none';
             document.getElementById('errorState').style.display = 'flex';
-            document.getElementById('errorMsg').textContent = 'Erro ao carregar. Tente reconstruir o indice.';
+            document.getElementById('errorMsg').textContent = 'Erro ao carregar. Clique em Rebuild para construir o indice.';
             isLoading = false;
             return;
         }
@@ -898,29 +884,45 @@
         }
     });
 
-    // ─── REBUILD INDEX ───
+    // ─── REBUILD INDEX (paginated via Worker) ───
     async function rebuildIndex() {
         var btn = document.getElementById('rebuildBtn');
         btn.disabled = true;
-        btn.textContent = 'Rebuilding...';
 
         try {
-            var resp = await fetch('/api/rebuild-index', { method: 'POST' });
-            var data = await resp.json();
+            // Step 1: Reset progress
+            btn.textContent = 'Resetando...';
+            var resetResp = await fetch(WORKER_URL + '/rebuild-reset', { method: 'POST' });
+            var resetData = await resetResp.json();
+            if (!resetData.success) throw new Error(resetData.error || 'Reset failed');
 
-            if (data.success) {
-                btn.textContent = 'OK! ' + data.total + ' videos';
-                btn.style.background = '#27ae60';
-                // Reload the video list after rebuild
-                setTimeout(function() {
-                    btn.textContent = '\u2699 Rebuild';
-                    btn.style.background = '#e67e22';
-                    btn.disabled = false;
-                    fetchVideos();
-                }, 2000);
-            } else {
-                throw new Error(data.error || 'Rebuild failed');
+            // Step 2: Call rebuild-step in loop until done
+            var done = false;
+            var step = 0;
+            while (!done) {
+                step++;
+                btn.textContent = 'Escaneando... (etapa ' + step + ')';
+                var resp = await fetch(WORKER_URL + '/rebuild-step', { method: 'POST' });
+                var data = await resp.json();
+
+                if (!data.success) throw new Error(data.error || 'Rebuild step failed');
+
+                if (data.done) {
+                    done = true;
+                    btn.textContent = 'OK! ' + (data.totalVideos || 0) + ' videos';
+                    btn.style.background = '#27ae60';
+                } else {
+                    btn.textContent = 'Escaneando... p' + data.pagesDone + ' (' + data.totalKeys + ' playlists)';
+                }
             }
+
+            // Reload video list
+            setTimeout(function() {
+                btn.textContent = '\u2699 Rebuild';
+                btn.style.background = '#e67e22';
+                btn.disabled = false;
+                fetchVideos();
+            }, 2000);
         } catch (e) {
             btn.textContent = 'Erro!';
             btn.style.background = '#e74c3c';
