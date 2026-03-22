@@ -415,6 +415,7 @@
             <button id="listViewBtn" onclick="setView('list')" title="Lista">&#9776;</button>
         </div>
         <button class="btn btn-primary" onclick="fetchVideos()">&#8635; Atualizar</button>
+        <button class="btn btn-primary" onclick="rebuildIndex()" id="rebuildBtn" title="Reconstruir indice de videos no R2" style="background:#e67e22">&#9881; Rebuild</button>
     </div>
 </div>
 
@@ -526,9 +527,10 @@
         setTimeout(function() { bar.style.display = 'none'; bar.style.width = '0'; }, 400);
     }
 
-    // ─── FETCH WITH RETRY + LOCAL CACHE ───
+    // ─── VIDEO INDEX: R2 STATIC JSON + FALLBACKS ───
+    var R2_INDEX_URL = 'https://pub-42ef583694d949bca7c5c104422f55c7.r2.dev/videos.json';
     var CACHE_KEY = 'cf_videos_cache';
-    var CACHE_MAX_AGE = 5 * 60 * 1000; // 5 minutes
+    var CACHE_MAX_AGE = 30 * 60 * 1000; // 30 minutes
 
     function getLocalCache() {
         try {
@@ -548,25 +550,6 @@
         } catch (e) {}
     }
 
-    async function fetchWithRetry(url, maxRetries, baseDelay) {
-        var lastError;
-        for (var attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                var resp = await fetch(url);
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                return await resp.json();
-            } catch (e) {
-                lastError = e;
-                if (attempt < maxRetries) {
-                    var delay = baseDelay * Math.pow(2, attempt);
-                    console.log('Retry ' + (attempt + 1) + '/' + maxRetries + ' in ' + delay + 'ms...');
-                    await new Promise(function(r) { setTimeout(r, delay); });
-                }
-            }
-        }
-        throw lastError;
-    }
-
     async function fetchVideos() {
         if (isLoading) return;
         isLoading = true;
@@ -578,32 +561,56 @@
         document.getElementById('emptyState').style.display = 'none';
         showProgress(20);
 
-        try {
-            showProgress(40);
-            var data = await fetchWithRetry('/api/videos', 3, 1000);
-            showProgress(90);
+        var data = null;
 
-            if (data.success) {
-                allVideos = Array.isArray(data.videos) ? data.videos : [];
-                setLocalCache(allVideos);
-                console.log('Videos loaded:', allVideos.length);
-            } else {
-                throw new Error(data.error || 'API error');
+        // Source 1: R2 static JSON (fastest — no function call)
+        try {
+            showProgress(30);
+            var resp = await fetch(R2_INDEX_URL);
+            if (resp.ok) {
+                data = await resp.json();
+                console.log('Loaded from R2 static index');
             }
         } catch (e) {
-            // Fallback: use local cache if available
+            console.warn('R2 direct fetch failed:', e.message);
+        }
+
+        // Source 2: Netlify function (reads videos.json via S3 API)
+        if (!data || !data.success) {
+            try {
+                showProgress(50);
+                var resp2 = await fetch('/api/videos');
+                if (resp2.ok) {
+                    data = await resp2.json();
+                    console.log('Loaded from API function');
+                }
+            } catch (e) {
+                console.warn('API function failed:', e.message);
+            }
+        }
+
+        // Source 3: localStorage cache (offline fallback)
+        if (!data || !data.success) {
+            showProgress(70);
             var cached = getLocalCache();
             if (cached && cached.length > 0) {
-                allVideos = cached;
-                console.log('Using cached videos (' + cached.length + ') after API error:', e.message);
-            } else {
-                hideProgress();
-                document.getElementById('skeletonLoader').style.display = 'none';
-                document.getElementById('errorState').style.display = 'flex';
-                document.getElementById('errorMsg').textContent = 'Erro: ' + e.message;
-                isLoading = false;
-                return;
+                data = { success: true, videos: cached };
+                console.log('Loaded from local cache (' + cached.length + ' videos)');
             }
+        }
+
+        showProgress(90);
+
+        if (data && data.success) {
+            allVideos = Array.isArray(data.videos) ? data.videos : [];
+            setLocalCache(allVideos);
+        } else {
+            hideProgress();
+            document.getElementById('skeletonLoader').style.display = 'none';
+            document.getElementById('errorState').style.display = 'flex';
+            document.getElementById('errorMsg').textContent = 'Erro ao carregar. Tente reconstruir o indice.';
+            isLoading = false;
+            return;
         }
 
         hideProgress();
@@ -890,6 +897,41 @@
             document.getElementById('searchInput').focus();
         }
     });
+
+    // ─── REBUILD INDEX ───
+    async function rebuildIndex() {
+        var btn = document.getElementById('rebuildBtn');
+        btn.disabled = true;
+        btn.textContent = 'Rebuilding...';
+
+        try {
+            var resp = await fetch('/api/rebuild-index', { method: 'POST' });
+            var data = await resp.json();
+
+            if (data.success) {
+                btn.textContent = 'OK! ' + data.total + ' videos';
+                btn.style.background = '#27ae60';
+                // Reload the video list after rebuild
+                setTimeout(function() {
+                    btn.textContent = '\u2699 Rebuild';
+                    btn.style.background = '#e67e22';
+                    btn.disabled = false;
+                    fetchVideos();
+                }, 2000);
+            } else {
+                throw new Error(data.error || 'Rebuild failed');
+            }
+        } catch (e) {
+            btn.textContent = 'Erro!';
+            btn.style.background = '#e74c3c';
+            console.error('Rebuild error:', e.message);
+            setTimeout(function() {
+                btn.textContent = '\u2699 Rebuild';
+                btn.style.background = '#e67e22';
+                btn.disabled = false;
+            }, 3000);
+        }
+    }
 
     // ─── INIT ───
     fetchVideos();
