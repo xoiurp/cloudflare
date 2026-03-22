@@ -25,6 +25,8 @@ exports.handler = async (event) => {
   const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
   const BUCKET_NAME = process.env.R2_BUCKET_NAME || "cdn";
 
+  console.log("Config:", { ACCOUNT_ID: !!ACCOUNT_ID, R2_ACCESS_KEY: !!R2_ACCESS_KEY, R2_SECRET_KEY: !!R2_SECRET_KEY, BUCKET_NAME });
+
   if (!ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY) {
     return {
       statusCode: 500,
@@ -61,6 +63,14 @@ exports.handler = async (event) => {
       const response = await s3.send(command);
       pageCount++;
 
+      const totalObjects = response.Contents ? response.Contents.length : 0;
+      console.log(`Page ${pageCount}: ${totalObjects} objects, IsTruncated: ${response.IsTruncated}`);
+
+      // Log first 5 keys of first page for debugging
+      if (pageCount === 1 && response.Contents) {
+        console.log("First 5 keys:", response.Contents.slice(0, 5).map(o => o.Key));
+      }
+
       if (response.Contents) {
         for (const obj of response.Contents) {
           if (obj.Key.endsWith(".m3u8")) {
@@ -75,6 +85,9 @@ exports.handler = async (event) => {
     } while (continuationToken);
 
     console.log(`Listed ${pageCount} pages, found ${m3u8Files.length} m3u8 files`);
+    if (m3u8Files.length > 0) {
+      console.log("Sample m3u8:", m3u8Files.slice(0, 3));
+    }
 
     // Group m3u8 files by video directory
     const videoMap = {};
