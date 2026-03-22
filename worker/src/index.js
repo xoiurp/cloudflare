@@ -19,40 +19,31 @@ function encodeR2Path(key) {
   return key.split("/").map((seg) => encodeURIComponent(seg)).join("/");
 }
 
-function buildVideosFromKeys(playlistKeys) {
+// Same grouping logic as the original videos.js
+function buildVideosFromKeys(m3u8Files) {
   const videoMap = {};
-  for (const key of playlistKeys) {
-    // key = "videos/Course/Module/Cat/Video.mp4_2160p/playlist.m3u8"
+
+  for (const key of m3u8Files) {
     const parts = key.split("/");
-    parts.pop(); // remove "playlist.m3u8"
-    const videoDir = parts.join("/"); // "videos/Course/Module/Cat/Video.mp4_2160p"
+    const filename = parts.pop(); // e.g. "1080p.m3u8"
+    const videoDir = parts.join("/"); // e.g. "videos/Course/Module/Cat/Video.mp4_2160p"
+    const quality = filename.replace(".m3u8", ""); // e.g. "1080p"
 
-    // Extract quality from folder name: "Video.mp4_2160p" → "2160p"
-    const videoFolder = parts[parts.length - 1] || "";
-    const qualityMatch = videoFolder.match(/_(\d+p)$/);
-
-    if (!qualityMatch) continue; // skip if no quality pattern
-
-    const quality = qualityMatch[1];
-
-    // Parent dir without quality suffix = actual video identity
-    // e.g. "videos/Course/Module/Cat/Video.mp4"
-    const videoBase = videoDir.replace(/_\d+p$/, "");
-
-    if (!videoMap[videoBase]) {
-      const pathParts = videoBase.split("/");
+    if (!videoMap[videoDir]) {
+      const pathParts = [...parts];
       pathParts.shift(); // remove "videos"
 
-      const videoFile = pathParts.pop() || "";
-      const videoName = videoFile
-        .replace(/\.mp4$/i, "")
+      const videoFolder = pathParts.pop() || ""; // e.g. "Video.mp4_2160p"
+      const videoName = videoFolder
+        .replace(/\.mp4_\d+p$/i, "")
         .replace(/_/g, " ")
         .trim();
 
-      videoMap[videoBase] = {
-        id: btoa(unescape(encodeURIComponent(videoBase))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
-        name: videoName || videoFile,
-        path: videoBase,
+      videoMap[videoDir] = {
+        id: btoa(unescape(encodeURIComponent(videoDir)))
+          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+        name: videoName || videoFolder,
+        path: videoDir,
         course: (pathParts[0] || "").trim(),
         module: (pathParts[1] || "").trim(),
         category: (pathParts[2] || "").trim(),
@@ -61,8 +52,8 @@ function buildVideosFromKeys(playlistKeys) {
       };
     }
 
-    videoMap[videoBase].qualities.push(quality);
-    videoMap[videoBase].urls[quality] = `${R2_PUBLIC_URL}/${encodeR2Path(key)}`;
+    videoMap[videoDir].qualities.push(quality);
+    videoMap[videoDir].urls[quality] = `${R2_PUBLIC_URL}/${encodeR2Path(key)}`;
   }
 
   const qualityOrder = { "720p": 1, "1080p": 2, "2160p": 3 };
@@ -108,16 +99,14 @@ export default {
     }
 
     // ─── POST /rebuild-step ───
-    // Each call: scans up to 5 pages, saves only playlist.m3u8 keys.
-    // Progress file stores only cursor + batch number (lightweight).
-    // Actual keys are stored in separate batch files to avoid bloat.
+    // Each call scans up to 5 pages (5000 objects), saves .m3u8 keys in batch files.
+    // Progress file is lightweight (cursor + metadata only).
     if (url.pathname === "/rebuild-step" && request.method === "POST") {
       try {
-        // Load lightweight progress (cursor + metadata only)
         let progress = { cursor: null, pagesDone: 0, batchCount: 0, totalKeys: 0, done: false };
         const existing = await env.VIDEOS_BUCKET.get(PROGRESS_KEY);
         if (existing) {
-          try { progress = await existing.json(); } catch (e) { /* fresh start */ }
+          try { progress = await existing.json(); } catch (e) { /* fresh */ }
         }
 
         if (progress.done) {
@@ -128,7 +117,6 @@ export default {
           });
         }
 
-        // Scan up to 5 pages, collect only playlist.m3u8 keys
         const PAGES_PER_CALL = 5;
         let keysThisBatch = [];
         let finished = false;
@@ -141,7 +129,7 @@ export default {
           progress.pagesDone++;
 
           for (const obj of listed.objects) {
-            if (obj.key.endsWith("/playlist.m3u8")) {
+            if (obj.key.endsWith(".m3u8")) {
               keysThisBatch.push(obj.key);
             }
           }
@@ -154,7 +142,7 @@ export default {
           progress.cursor = listed.cursor;
         }
 
-        // Save this batch's keys to a separate file
+        // Save batch keys to separate file
         if (keysThisBatch.length > 0) {
           await env.VIDEOS_BUCKET.put(
             `_batch_${progress.batchCount}.json`,
@@ -166,13 +154,12 @@ export default {
         }
 
         if (finished) {
-          // Collect all batch keys
+          // Collect all batches
           let allKeys = [];
           for (let b = 0; b < progress.batchCount; b++) {
             const batchObj = await env.VIDEOS_BUCKET.get(`_batch_${b}.json`);
             if (batchObj) {
-              const batchKeys = await batchObj.json();
-              allKeys = allKeys.concat(batchKeys);
+              allKeys = allKeys.concat(await batchObj.json());
             }
           }
 
@@ -201,13 +188,13 @@ export default {
           return jsonResponse({
             success: true, done: true,
             pagesDone: progress.pagesDone,
-            playlistCount: allKeys.length,
+            m3u8Count: allKeys.length,
             totalVideos: videos.length,
             message: `Index complete! ${videos.length} videos indexed.`,
           });
         }
 
-        // Save lightweight progress
+        // Save progress
         await env.VIDEOS_BUCKET.put(PROGRESS_KEY, JSON.stringify(progress), {
           httpMetadata: { contentType: "application/json" },
         });
@@ -217,7 +204,7 @@ export default {
           pagesDone: progress.pagesDone,
           totalKeys: progress.totalKeys,
           keysThisBatch: keysThisBatch.length,
-          message: `${progress.pagesDone} pages scanned, ${progress.totalKeys} playlists found. Call again.`,
+          message: `${progress.pagesDone} pages scanned, ${progress.totalKeys} m3u8 found. Call again.`,
         });
       } catch (err) {
         return jsonResponse({ success: false, error: err.message }, 500);
@@ -227,12 +214,11 @@ export default {
     // ─── POST /rebuild-reset ───
     if (url.pathname === "/rebuild-reset" && request.method === "POST") {
       try {
-        // Clean up progress and any leftover batch files
         await env.VIDEOS_BUCKET.delete(PROGRESS_KEY);
         for (let b = 0; b < 100; b++) {
           await env.VIDEOS_BUCKET.delete(`_batch_${b}.json`);
         }
-        return jsonResponse({ success: true, message: "Progress cleared. Call POST /rebuild-step to start." });
+        return jsonResponse({ success: true, message: "Progress cleared." });
       } catch (err) {
         return jsonResponse({ success: false, error: err.message }, 500);
       }
