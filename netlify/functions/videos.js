@@ -23,7 +23,7 @@ exports.handler = async (event) => {
   const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
   const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
   const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
-  const BUCKET_NAME = process.env.R2_BUCKET_NAME || "cdn";
+  const BUCKET_NAME = process.env.R2_BUCKET_NAME || "s3-projeto-cirurgiao";
 
   console.log("Config:", { ACCOUNT_ID: !!ACCOUNT_ID, R2_ACCESS_KEY: !!R2_ACCESS_KEY, R2_SECRET_KEY: !!R2_SECRET_KEY, BUCKET_NAME });
 
@@ -55,8 +55,8 @@ exports.handler = async (event) => {
     do {
       const command = new ListObjectsV2Command({
         Bucket: BUCKET_NAME,
-        Prefix: "videos/",
-        MaxKeys: 1000,
+        MaxKeys: 20,
+        Delimiter: "/",
         ContinuationToken: continuationToken,
       });
 
@@ -66,9 +66,12 @@ exports.handler = async (event) => {
       const totalObjects = response.Contents ? response.Contents.length : 0;
       console.log(`Page ${pageCount}: ${totalObjects} objects, IsTruncated: ${response.IsTruncated}`);
 
-      // Log first 5 keys of first page for debugging
+      // Log root-level folders and files
+      if (response.CommonPrefixes) {
+        console.log("Root folders:", response.CommonPrefixes.map(p => p.Prefix));
+      }
       if (pageCount === 1 && response.Contents) {
-        console.log("First 5 keys:", response.Contents.slice(0, 5).map(o => o.Key));
+        console.log("Root files:", response.Contents.slice(0, 10).map(o => o.Key));
       }
 
       if (response.Contents) {
